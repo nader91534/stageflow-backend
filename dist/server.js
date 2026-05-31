@@ -32,7 +32,7 @@ export async function connectDB() {
         const db = await mongoose.connect(mongoURI);
         isConnected = !!db.connections[0].readyState;
         console.log(`Connected to MongoDB at ${mongoURI}`);
-        // Seed default admin if not exists
+        // Seed default admin if not exists, or auto-repair if password is broken/double-hashed
         const admin = await User.findOne({ email: "admin@optistage.dz" });
         if (!admin) {
             await User.create({
@@ -44,12 +44,20 @@ export async function connectDB() {
             });
             console.log("Admin user seeded");
         }
-        else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
-            // Upgrade existing plain-text admin password to bcrypt hash explicitly via updateOne to avoid double hashing via pre-save hook
-            const salt = await bcrypt.genSalt(10);
-            const hash = await bcrypt.hash(admin.password, salt);
-            await User.updateOne({ _id: admin._id }, { password: hash });
-            console.log("Admin plain-text password automatically upgraded to bcrypt hash via updateOne");
+        else {
+            const isCorrect = await admin.comparePassword("admin123");
+            if (!isCorrect) {
+                const salt = await bcrypt.genSalt(10);
+                const hash = await bcrypt.hash("admin123", salt);
+                await User.updateOne({ _id: admin._id }, { password: hash });
+                console.log("Admin password was incorrect or double-hashed. Reset to 'admin123' successfully.");
+            }
+            else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
+                const salt = await bcrypt.genSalt(10);
+                const hash = await bcrypt.hash("admin123", salt);
+                await User.updateOne({ _id: admin._id }, { password: hash });
+                console.log("Admin plain-text password automatically upgraded to bcrypt hash via updateOne");
+            }
         }
         // Ensure all existing offers are active for the demo
         await Offer.updateMany({ status: 'pending' }, { status: 'active' });
