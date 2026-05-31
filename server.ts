@@ -54,11 +54,11 @@ export async function connectDB() {
       });
       console.log("Admin user seeded");
     } else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
-      // Upgrade existing plain-text admin password to bcrypt hash explicitly
+      // Upgrade existing plain-text admin password to bcrypt hash explicitly via updateOne to avoid double hashing via pre-save hook
       const salt = await bcrypt.genSalt(10);
-      admin.password = await bcrypt.hash(admin.password, salt);
-      await admin.save();
-      console.log("Admin plain-text password automatically upgraded to bcrypt hash");
+      const hash = await bcrypt.hash(admin.password, salt);
+      await User.updateOne({ _id: admin._id }, { password: hash });
+      console.log("Admin plain-text password automatically upgraded to bcrypt hash via updateOne");
     }
 
     // Ensure all existing offers are active for the demo
