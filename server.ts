@@ -35,7 +35,6 @@ export async function connectDB() {
     const mongod = await MongoMemoryServer.create();
     mongoURI = mongod.getUri();
   }
-
   try {
     const db = await mongoose.connect(mongoURI);
     isConnected = !!db.connections[0].readyState;
@@ -52,6 +51,17 @@ export async function connectDB() {
         status: "active"
       });
       console.log("Admin user seeded");
+    }
+
+    // Migrate any existing users with plain-text passwords to bcrypt hashes
+    const allUsers = await User.find();
+    for (const u of allUsers) {
+      const isHashed = u.password && u.password.startsWith('$2') && u.password.length === 60;
+      if (!isHashed) {
+        u.markModified('password');
+        await u.save();
+        console.log(`Migrated password for user: ${u.email}`);
+      }
     }
 
     // Ensure all existing offers are active for the demo
@@ -84,8 +94,8 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email, password });
-    if (user) {
+    const user = await User.findOne({ email });
+    if (user && await user.comparePassword(password)) {
       res.json(user);
     } else {
       res.status(401).json({ error: "Invalid credentials" });
