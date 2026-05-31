@@ -5,7 +5,6 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-import bcrypt from "bcrypt";
 import User from "./models/User.js";
 import Offer from "./models/Offer.js";
 import Application from "./models/Application.js";
@@ -32,9 +31,9 @@ export async function connectDB() {
         const db = await mongoose.connect(mongoURI);
         isConnected = !!db.connections[0].readyState;
         console.log(`Connected to MongoDB at ${mongoURI}`);
-        // Seed default admin if not exists, or auto-repair if password is broken/double-hashed
-        const admin = await User.findOne({ email: "admin@optistage.dz" });
-        if (!admin) {
+        // Seed default admin if not exists
+        const adminExists = await User.findOne({ email: "admin@optistage.dz" });
+        if (!adminExists) {
             await User.create({
                 email: "admin@optistage.dz",
                 password: "admin123",
@@ -43,21 +42,6 @@ export async function connectDB() {
                 status: "active"
             });
             console.log("Admin user seeded");
-        }
-        else {
-            const isCorrect = await admin.comparePassword("admin123");
-            if (!isCorrect) {
-                const salt = await bcrypt.genSalt(10);
-                const hash = await bcrypt.hash("admin123", salt);
-                await User.updateOne({ _id: admin._id }, { password: hash });
-                console.log("Admin password was incorrect or double-hashed. Reset to 'admin123' successfully.");
-            }
-            else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
-                const salt = await bcrypt.genSalt(10);
-                const hash = await bcrypt.hash("admin123", salt);
-                await User.updateOne({ _id: admin._id }, { password: hash });
-                console.log("Admin plain-text password automatically upgraded to bcrypt hash via updateOne");
-            }
         }
         // Ensure all existing offers are active for the demo
         await Offer.updateMany({ status: 'pending' }, { status: 'active' });
@@ -87,8 +71,8 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await User.findOne({ email });
-        if (user && await user.comparePassword(password)) {
+        const user = await User.findOne({ email, password });
+        if (user) {
             res.json(user);
         }
         else {
