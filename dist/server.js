@@ -8,25 +8,32 @@ import { fileURLToPath } from "url";
 import User from "./models/User.js";
 import Offer from "./models/Offer.js";
 import Application from "./models/Application.js";
-dotenv.config({ path: '../.env' }); // or just config() if running from root
+dotenv.config();
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 let mongoURI = process.env.MONGODB_URI;
-async function connectDB() {
+// Global variable to cache the Mongoose connection in Serverless environments (like Vercel)
+let isConnected = false;
+export async function connectDB() {
+    if (isConnected) {
+        console.log("Using existing MongoDB connection");
+        return;
+    }
     if (!mongoURI) {
         console.log("No MONGODB_URI provided. Starting mongodb-memory-server for local testing...");
         const { MongoMemoryServer } = await import('mongodb-memory-server');
         const mongod = await MongoMemoryServer.create();
         mongoURI = mongod.getUri();
     }
-    mongoose.connect(mongoURI)
-        .then(async () => {
+    try {
+        const db = await mongoose.connect(mongoURI);
+        isConnected = !!db.connections[0].readyState;
         console.log(`Connected to MongoDB at ${mongoURI}`);
         // Seed default admin if not exists
-        const adminExists = await User.findOne({ email: "admin@optistage.dz" });
-        if (!adminExists) {
+        const admin = await User.findOne({ email: "admin@optistage.dz" });
+        if (!admin) {
             await User.create({
                 email: "admin@optistage.dz",
                 password: "admin123",
@@ -36,11 +43,20 @@ async function connectDB() {
             });
             console.log("Admin user seeded");
         }
+        else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
+            // Upgrade existing plain-text admin password to bcrypt hash
+            admin.password = admin.password; // setting it marks it as modified, triggering pre-save hook
+            await admin.save();
+            console.log("Admin plain-text password automatically upgraded to bcrypt hash");
+        }
         // Ensure all existing offers are active for the demo
         await Offer.updateMany({ status: 'pending' }, { status: 'active' });
-    })
-        .catch(err => console.error("MongoDB connection error:", err));
+    }
+    catch (err) {
+        console.error("MongoDB connection error:", err);
+    }
 }
+// Connect immediately, but also ensure connection is established in serverless handlers
 connectDB();
 // --- API Routes ---
 // Auth
@@ -61,8 +77,8 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     try {
-        const user = await User.findOne({ email, password });
-        if (user) {
+        const user = await User.findOne({ email });
+        if (user && await user.comparePassword(password)) {
             res.json(user);
         }
         else {
@@ -256,6 +272,8 @@ app.use(express.static(frontendDistPath));
 app.get('*', (req, res) => {
     res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
+// Conditionally start server if not running in Vercel (where it acts as a module)
 app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Backend server running on http://localhost:${PORT}`);
+    console.log(`Server running on port ${PORT}`);
 });
+export default app;

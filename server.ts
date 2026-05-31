@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import bcrypt from "bcrypt";
 
 import User from "./models/User.js";
 import Offer from "./models/Offer.js";
@@ -42,8 +43,8 @@ export async function connectDB() {
     console.log(`Connected to MongoDB at ${mongoURI}`);
 
     // Seed default admin if not exists
-    const adminExists = await User.findOne({ email: "admin@optistage.dz" });
-    if (!adminExists) {
+    const admin = await User.findOne({ email: "admin@optistage.dz" });
+    if (!admin) {
       await User.create({
         email: "admin@optistage.dz",
         password: "admin123",
@@ -52,6 +53,12 @@ export async function connectDB() {
         status: "active"
       });
       console.log("Admin user seeded");
+    } else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
+      // Upgrade existing plain-text admin password to bcrypt hash explicitly
+      const salt = await bcrypt.genSalt(10);
+      admin.password = await bcrypt.hash(admin.password, salt);
+      await admin.save();
+      console.log("Admin plain-text password automatically upgraded to bcrypt hash");
     }
 
     // Ensure all existing offers are active for the demo
@@ -84,8 +91,8 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
   try {
-    const user = await User.findOne({ email, password });
-    if (user) {
+    const user = await User.findOne({ email });
+    if (user && await user.comparePassword(password)) {
       res.json(user);
     } else {
       res.status(401).json({ error: "Invalid credentials" });
