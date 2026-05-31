@@ -1,6 +1,5 @@
 // @ts-nocheck
 import mongoose, { Schema, Document } from 'mongoose';
-import bcrypt from 'bcrypt';
 
 export interface IUser extends Document {
   email: string;
@@ -9,7 +8,6 @@ export interface IUser extends Document {
   name: string;
   status: string;
   created_at: Date;
-  comparePassword(candidatePassword: string): Promise<boolean>;
 }
 
 const UserSchema = new Schema<IUser>({
@@ -25,47 +23,8 @@ const UserSchema = new Schema<IUser>({
       ret.id = ret._id;
       delete ret._id;
       delete ret.__v;
-      delete ret.password;
-    }
-  },
-  toObject: {
-    transform: function (doc, ret) {
-      ret.id = ret._id;
-      delete ret._id;
-      delete ret.__v;
-      delete ret.password;
     }
   }
 });
 
-// Hash password before saving if it is new or modified
-UserSchema.pre('save', async function (next) {
-  const user = this;
-  if (!user.isModified('password') || !user.password) return next();
-
-  try {
-    const salt = await bcrypt.genSalt(10);
-    const hash = await bcrypt.hash(user.password, salt);
-    user.password = hash;
-    next();
-  } catch (err: any) {
-    next(err);
-  }
-});
-
-// Compare entered password with stored hash (with plain-text fallback for backward compatibility)
-UserSchema.methods.comparePassword = async function (candidatePassword: string): Promise<boolean> {
-  const storedHash = this.password;
-  if (!storedHash) return false;
-  
-  if (!storedHash.startsWith('$2a$') && !storedHash.startsWith('$2b$') && !storedHash.startsWith('$2y$')) {
-    return candidatePassword === storedHash;
-  }
-  return bcrypt.compare(candidatePassword, storedHash);
-};
-
-if (mongoose.models && mongoose.models.User) {
-  delete mongoose.models.User;
-}
-
-export default mongoose.model<IUser>('User', UserSchema);
+export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
