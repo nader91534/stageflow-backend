@@ -31,7 +31,7 @@ export async function connectDB() {
         const db = await mongoose.connect(mongoURI);
         isConnected = !!db.connections[0].readyState;
         console.log(`Connected to MongoDB at ${mongoURI}`);
-        // Seed default admin if not exists
+        // Seed default admin if not exists or ensure password is 'admin123'
         const admin = await User.findOne({ email: "admin@optistage.dz" });
         if (!admin) {
             await User.create({
@@ -43,11 +43,11 @@ export async function connectDB() {
             });
             console.log("Admin user seeded");
         }
-        else if (admin.password && !admin.password.startsWith('$2a$') && !admin.password.startsWith('$2b$') && !admin.password.startsWith('$2y$')) {
-            // Upgrade existing plain-text admin password to bcrypt hash
-            admin.password = admin.password; // setting it marks it as modified, triggering pre-save hook
+        else {
+            // Force reset and ensure admin's password is 'admin123' (gets hashed by pre-save middleware)
+            admin.password = "admin123";
             await admin.save();
-            console.log("Admin plain-text password automatically upgraded to bcrypt hash");
+            console.log("Admin password verified and updated to 'admin123'");
         }
         // Ensure all existing offers are active for the demo
         await Offer.updateMany({ status: 'pending' }, { status: 'active' });
