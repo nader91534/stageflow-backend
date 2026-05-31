@@ -36,7 +36,7 @@ export async function connectDB() {
         if (!adminExists) {
             await User.create({
                 email: "admin@optistage.dz",
-                password: "admin123",
+                password: "admin2026",
                 role: "admin",
                 name: "Administrateur",
                 status: "active"
